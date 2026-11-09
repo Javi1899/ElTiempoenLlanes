@@ -71,6 +71,31 @@ footer{margin-top:22px;color:var(--mut);font-size:.74rem;text-align:center;line-
 .rtime{font-size:.88rem;min-width:130px;text-align:right}
 .rtime small{display:block;color:var(--mut);font-size:.72rem}
 .rnote{padding:0 14px 12px;font-size:.74rem;color:var(--mut)}
+.nowbox{padding:12px 14px;margin-bottom:12px;border-left:5px solid var(--mut)}
+.n-ok{border-left-color:var(--ok)}
+.n-rain{border-left-color:#60a5fa;background:rgba(96,165,250,.12)}
+.n-warn{border-left-color:var(--warn);background:rgba(251,191,36,.12)}
+.n-bad{border-left-color:var(--bad);background:rgba(248,113,113,.14)}
+.nowtx{font-size:1.05rem;font-weight:600;line-height:1.35}
+.nowsub{font-size:.78rem;color:var(--mut);margin-top:6px;line-height:1.5}
+.nowbar{display:grid;grid-template-columns:repeat(13,1fr);gap:3px;margin-top:10px}
+.nowbar i{height:16px;border-radius:4px;display:block}
+.nowax{display:flex;justify-content:space-between;font-size:.68rem;color:var(--mut);margin-top:3px}
+.moon{padding:14px}
+.mtop{display:flex;gap:16px;align-items:center;flex-wrap:wrap}
+.mbig{flex:0 0 auto;filter:drop-shadow(0 0 14px rgba(244,239,216,.25))}
+.mtx{flex:1;min-width:220px}
+.mname{font-size:1.3rem;font-weight:700}
+.msub{font-size:.85rem;color:var(--mut);margin-top:2px;line-height:1.5}
+.mph{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.mchip{display:inline-flex;align-items:center;gap:6px;background:rgba(255,255,255,.06);border-radius:20px;padding:4px 10px;font-size:.78rem}
+.mchip b{font-weight:500;color:var(--mut);text-transform:capitalize}
+.mstrip{display:grid;grid-template-columns:repeat(auto-fill,minmax(64px,1fr));gap:6px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}
+.ms{text-align:center;font-size:.72rem;color:var(--mut);padding:4px 0;border-radius:10px}
+.ms.sel{background:rgba(96,165,250,.14)}
+.ms span{display:block;text-transform:capitalize;margin-bottom:2px}
+.ms b{display:block;color:var(--tx);font-weight:500;margin-top:2px}
+.ms svg{display:block;margin:0 auto}
 .leaflet-container{font-family:inherit}
 @media(max-width:760px){#map{height:320px}}
 @media(max-width:760px){.hero{grid-template-columns:1fr}.big .t{font-size:2.8rem}}
@@ -102,6 +127,7 @@ footer{margin-top:22px;color:var(--mut);font-size:.74rem;text-align:center;line-
   <button id="rf">⟳ Actualizar</button>
  </header>
  <div id="err"></div>
+ <div id="now" class="card nowbox n-na"><div class="nowtx">⏳ Analizando el radar de lluvia…</div></div>
  <section class="hero">
   <div class="card scene" id="scene"></div>
   <div class="card info" id="info"></div>
@@ -112,6 +138,8 @@ footer{margin-top:22px;color:var(--mut);font-size:.74rem;text-align:center;line-
  <div class="days" id="days"></div>
  <div class="sec" id="hrt">Hora a hora</div>
  <div class="card hours" id="hours"></div>
+ <div class="sec">🌙 Fases de la luna</div>
+ <div class="card moon" id="moon"></div>
  <div class="sec">🛰️ Radar de lluvia</div>
  <div class="card radar">
   <div id="map"></div>
@@ -120,9 +148,9 @@ footer{margin-top:22px;color:var(--mut);font-size:.74rem;text-align:center;line-
    <input type="range" id="rsl" min="0" max="0" value="0">
    <div class="rtime"><span id="rt">–</span><small id="rago"></small></div>
   </div>
-  <div class="rnote">Últimas 2 horas, un fotograma cada 10 min. Cuanto más fuerte el color, más intensa la lluvia. Se actualiza cada 5 min.</div>
+  <div class="rnote">Última hora, un fotograma cada 10 min. Cuanto más fuerte el color, más intensa la lluvia. Se actualiza cada 5 min.</div>
  </div>
- <footer>Datos: Open-Meteo (modelos meteorológicos y marinos) y RainViewer (radar). Mapa © OpenStreetMap · © CARTO. Pueden diferir de Winguru o AEMET.<br>Los avisos son orientativos, no oficiales. Se actualiza solo cada 2 h mientras la página está abierta.<br><br><b>Web creada por Javi.TJ</b></footer>
+ <footer>Datos: Open-Meteo (modelos meteorológicos y marinos) y RainViewer (radar). Mapa © OpenStreetMap · © CARTO. Fases lunares calculadas en la propia página con fórmulas astronómicas (horas con un margen de unos minutos). Pueden diferir de Winguru o AEMET.<br>Los avisos son orientativos, no oficiales. Se actualiza solo cada 2 h mientras la página está abierta.<br><br><b>Web creada por Javi.TJ</b></footer>
 </div>
 
 <script>
@@ -356,7 +384,7 @@ function render(){
   hh+=`<div class="hc"><b>${t.slice(11,13)}h</b><span class="e">${wmo(h.weather_code[j],false)[1]}</span><span>${Math.round(h.temperature_2m[j])}°</span>
   <div class="box"><div class="bar" style="height:${Math.min(42,h.precipitation[j]*12)}px"></div></div><small>${h.precipitation[j].toFixed(1)}mm</small><small class="${cl}">💨${Math.round(gg)}</small></div>`});
  $('#hrt').textContent='Hora a hora · '+dayFull(i);
- $('#hours').innerHTML=hh;
+ $('#hours').innerHTML=hh;renderMoon();renderNow();
 }
 
 /* ===== DATOS ===== */
@@ -377,6 +405,167 @@ async function load(){
  if(D){const t=new Date(D.stamp);$('#upd').textContent='Actualizado '+t.toLocaleDateString('es-ES',{day:'numeric',month:'short'})+' '+t.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})+' · Open-Meteo';render()}
  else $('#upd').textContent='Sin datos';
 }
+/* ===== LUNA (cálculo astronómico propio, sin datos externos) ===== */
+const RAD=Math.PI/180,n360=a=>((a%360)+360)%360;
+function moonElong(date){ // elongación Luna−Sol en grados: 0 = nueva, 180 = llena
+ const jd=date.getTime()/86400000+2440587.5,T=(jd-2451545)/36525,s=x=>Math.sin(x*RAD);
+ const Lm=218.3164477+481267.88123421*T,Dm=297.8501921+445267.1114034*T,M=357.5291092+35999.0502909*T,
+  Mm=134.9633964+477198.8675055*T,F=93.272095+483202.0175233*T;
+ const lon=Lm+6.288774*s(Mm)+1.274027*s(2*Dm-Mm)+0.658314*s(2*Dm)+0.213618*s(2*Mm)-0.185116*s(M)-0.114332*s(2*F)
+  +0.058793*s(2*Dm-2*Mm)+0.057066*s(2*Dm-M-Mm)+0.053322*s(2*Dm+Mm)+0.045758*s(2*Dm-M);
+ const sun=280.46646+36000.76983*T+1.914602*s(M)+0.019993*s(2*M);
+ return n360(lon-sun);
+}
+const MOON_NAMES=[[12,'Luna nueva'],[78,'Luna creciente'],[102,'Cuarto creciente'],[168,'Gibosa creciente'],[192,'Luna llena'],[258,'Gibosa menguante'],[282,'Cuarto menguante'],[348,'Luna menguante'],[361,'Luna nueva']];
+const moonName=p=>MOON_NAMES.find(x=>p<x[0])[1];
+function nextPhase(target,from){ // próxima fecha en que la elongación llega a target (0/90/180/270)
+ const df=d=>((moonElong(d)-target+540)%360)-180,step=6*36e5;
+ let t=from.getTime(),a=df(new Date(t));
+ for(let i=0;i<150;i++){
+  const b=df(new Date(t+step));
+  if(a<0&&b>=0){let lo=t,hi=t+step;for(let k=0;k<30;k++){const m=(lo+hi)/2;if(df(new Date(m))<0)lo=m;else hi=m}return new Date(hi)}
+  t+=step;a=b;
+ }
+ return null;
+}
+function moonSVG(psi,sz){
+ const R=20,k=Math.cos(psi*RAD),rx=(Math.abs(k)*R).toFixed(2),wax=psi<180;
+ const lit=`M0 ${-R} A${R} ${R} 0 0 1 0 ${R} A${rx} ${R} 0 0 ${k>0?0:1} 0 ${-R}Z`;
+ return`<svg viewBox="-22 -22 44 44" width="${sz}" height="${sz}" aria-hidden="true"><circle r="${R}" fill="#1b2640" stroke="rgba(255,255,255,.2)" stroke-width=".6"/><path d="${lit}" fill="#f4efd8"${wax?'':' transform="scale(-1 1)"'}/></svg>`;
+}
+function renderMoon(){
+ if(!D)return;
+ const d=D.daily,i=sel,when=i===0?new Date():dayDate(d.time[i]);
+ const psi=moonElong(when),ill=Math.round((1-Math.cos(psi*RAD))/2*100),age=(psi/360*29.530588).toFixed(1).replace('.',',');
+ const fmt=x=>x.toLocaleString('es-ES',{weekday:'short',day:'numeric',month:'short',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'}).replace(',','');
+ const base=new Date();
+ const ph=[[0,'Nueva'],[90,'Cuarto creciente'],[180,'Llena'],[270,'Cuarto menguante']].map(([t,n])=>({n,psi:t,d:nextPhase(t,base)})).filter(x=>x.d).sort((a,b)=>a.d-b.d);
+ $('#moon').innerHTML=`<div class="mtop"><div class="mbig">${moonSVG(psi,92)}</div><div class="mtx">
+  <div class="mname">${moonName(psi)}</div>
+  <div class="msub">${ill} % iluminada · ${age} días desde la luna nueva<br>${dayFull(i)}${i===0?' · ahora':''}</div>
+  <div class="mph">${ph.map(x=>`<span class="mchip">${moonSVG(x.psi,18)} ${x.n}<b>${fmt(x.d)}</b></span>`).join('')}</div></div></div>
+  <div class="mstrip">${d.time.map((_,j)=>{const p=moonElong(dayDate(d.time[j]));
+   return`<div class="ms${j===i?' sel':''}"><span>${dayLabel(j)}</span>${moonSVG(p,34)}<b>${Math.round((1-Math.cos(p*RAD))/2*100)}%</b></div>`}).join('')}</div>`;
+}
+
+/* ===== AVISO DE LLUVIA INMEDIATA =====
+   Método habitual en apps del tiempo: se sigue el movimiento de la lluvia que YA ve el radar entre dos fotogramas
+   y se proyecta hacia Llanes. Solo datos reales de RainViewer; no anticipa lluvia que aún no existe. */
+const RV_HEX='88ddee,6cd1eb,51c5e8,36bae5,1baee2,00a3e0,009ad5,0091ca,0088bf,007fb4,0077aa,0070a3,00699c,006295,005b8e,005588,005180,004e78,004a70,004768,ffee00,ffe000,ffd200,ffc500,ffb700,ffaa00,ff9f00,ff9500,ff8b00,ff8100,ff4400,f23600,e62800,d91b00,cd0d00,c10000,a80000,8f0000,760000,5d0000,ffaaff,ff9fff,ff95ff,ff8bff,ff81ff,ff77ff,ff6cff,ff62ff,ff58ff,ff4eff'.split(',');
+const RV_RGB=RV_HEX.map(h=>[parseInt(h.slice(0,2),16),parseInt(h.slice(2,4),16),parseInt(h.slice(4,6),16)]); // dBZ 15..64 (Universal Blue)
+const rvCache=new Map(),RAIN_DBZ=15;
+function rvDbz(r,g,b,a){
+ if(a<250)return 0;                       // ecos débiles (<15 dBZ) vienen semitransparentes: no cuentan
+ const key=(r<<16)|(g<<8)|b;let v=rvCache.get(key);if(v!==undefined)return v;
+ if(r>245&&g>245&&b>245)v=65;
+ else{let best=1e9,bi=0;for(let i=0;i<RV_RGB.length;i++){const c=RV_RGB[i],d=(c[0]-r)**2+(c[1]-g)**2+(c[2]-b)**2;if(d<best){best=d;bi=i}}
+  v=best<=1500?RAIN_DBZ+bi:0}
+ rvCache.set(key,v);return v;
+}
+const dbzRate=z=>z<RAIN_DBZ?0:Math.pow(Math.pow(10,z/10)/200,1/1.6);   // Marshall-Palmer, mm/h
+const rateCls=r=>r<=0?null:r<=2?'débil':r<=15?'moderada':r<=30?'fuerte':'muy fuerte'; // umbrales AEMET (mm/h)
+const wpx=(lat,lon,z)=>{const n=256*2**z,s=Math.sin(lat*RAD);return{x:(lon+180)/360*n,y:(0.5-Math.log((1+s)/(1-s))/(4*Math.PI))*n}};
+const loadImg=u=>new Promise((ok,ko)=>{const i=new Image();i.crossOrigin='anonymous';i.onload=()=>ok(i);i.onerror=()=>ko(new Error('tile'));i.src=u});
+async function frameDbz(j,f,g){ // mosaico 256×256 px (z7, ~0,9 km/px) centrado en Llanes → dBZ por píxel
+ const cv=document.createElement('canvas');cv.width=cv.height=256;
+ const cx=cv.getContext('2d',{willReadFrequently:true}),jobs=[];
+ for(let ty=Math.floor(g.y0/256);ty<=Math.floor((g.y0+255)/256);ty++)
+  for(let tx=Math.floor(g.x0/256);tx<=Math.floor((g.x0+255)/256);tx++)
+   jobs.push(loadImg(`${j.host}${f.path}/256/7/${tx}/${ty}/2/0_0.png`).then(im=>cx.drawImage(im,tx*256-g.x0,ty*256-g.y0)));
+ const rs=await Promise.allSettled(jobs);
+ if(rs.some(r=>r.status==='rejected'))throw new Error('No se pudieron cargar las teselas del radar');
+ const d=cx.getImageData(0,0,256,256).data,out=new Uint8Array(65536); // lanza error si el servidor no permite leer los píxeles (CORS)
+ for(let p=0,q=0;p<65536;p++,q+=4)out[p]=d[q+3]?rvDbz(d[q],d[q+1],d[q+2],d[q+3]):0;
+ return out;
+}
+function motion(A,B){ // desplazamiento (px) de la lluvia entre A y B por correlación cruzada normalizada
+ const C=128,H=96,S=24,ST=2,va=new Float32Array(65536),vb=new Float32Array(65536);
+ let na=0,nb=0;
+ for(let p=0;p<65536;p++){va[p]=A[p]>=RAIN_DBZ?Math.min(A[p],45)-10:0;vb[p]=B[p]>=RAIN_DBZ?Math.min(B[p],45)-10:0}
+ for(let y=C-H;y<C+H;y+=ST)for(let x=C-H;x<C+H;x+=ST){if(va[y*256+x]>0)na++;if(vb[y*256+x]>0)nb++}
+ if(na<25||nb<25)return null;
+ let best=-2,bx=0,by=0;
+ for(let dy=-S;dy<=S;dy++)for(let dx=-S;dx<=S;dx++){
+  let n=0,sa=0,sb=0,saa=0,sbb=0,sab=0;
+  for(let y=C-H;y<C+H;y+=ST){const ra=y*256,rb=(y+dy)*256+dx;
+   for(let x=C-H;x<C+H;x+=ST){const a=va[ra+x],b=vb[rb+x];n++;sa+=a;sb+=b;saa+=a*a;sbb+=b*b;sab+=a*b}}
+  const den=(n*saa-sa*sa)*(n*sbb-sb*sb);if(den<=0)continue;
+  const c=(n*sab-sa*sb)/Math.sqrt(den);if(c>best){best=c;bx=dx;by=dy}
+ }
+ return best>=0.5?{dx:bx,dy:by,corr:best}:null;
+}
+function sampleMax(B,x,y){ // máx. dBZ en ~2 km alrededor del punto; null si cae fuera del mosaico
+ const cx=Math.round(x),cy=Math.round(y);if(cx<3||cy<3||cx>252||cy>252)return null;
+ let m=0;for(let j=-2;j<=2;j++)for(let i=-2;i<=2;i++){const v=B[(cy+j)*256+cx+i];if(v>m)m=v}return m;
+}
+let NOW={st:'load'};
+async function nowcast(j){
+ try{
+  if(!j||!j.radar||!j.radar.past||j.radar.past.length<3)throw new Error('Sin datos de radar');
+  const past=j.radar.past,B=past[past.length-1];
+  let A=past[0];for(const f of past)if(f!==B&&Math.abs(B.time-f.time-1200)<Math.abs(B.time-A.time-1200))A=f; // fotograma ~20 min antes
+  const age=Math.max(0,(Date.now()/1000-B.time)/60);
+  if(age>60){NOW={st:'stale',age:Math.round(age)};renderNow();return}
+  const P=wpx(CFG.lat,CFG.lon,7),g={x0:Math.floor(P.x)-128,y0:Math.floor(P.y)-128};
+  const [fa,fb]=await Promise.all([frameDbz(j,A,g),frameDbz(j,B,g)]);
+  const kmpp=156543.03*Math.cos(CFG.lat*RAD)/128/1000;
+  let rainAll=0;for(let p=0;p<65536;p++)if(fb[p]>=RAIN_DBZ)rainAll++;
+  if(rainAll<6){NOW={st:'dry',t:B.time,age};renderNow();return}
+  const dt=(B.time-A.time)/60,mo=dt>=10?motion(fa,fb):null;
+  if(!mo){NOW={st:'nomo',now:sampleMax(fb,128,128),t:B.time,age};renderNow();return}
+  const vx=mo.dx/dt,vy=mo.dy/dt,F=[];
+  for(let l=0;l<=60;l+=5){const t=age+l;F.push(sampleMax(fb,128-vx*t,128-vy*t))}
+  NOW={st:'ok',F,t:B.time,age,spd:Math.hypot(vx,vy)*kmpp*60,from:n360(Math.atan2(vx,-vy)/RAD+180),corr:mo.corr};
+  renderNow();
+ }catch(e){NOW={st:'err',msg:String(e&&e.message||e)};renderNow()}
+}
+function modelLine(){
+ try{
+  const h=D&&D.hourly,c=D&&D.current;if(!h||!c||Date.now()-D.stamp>3*3600e3)return'';
+  const k=h.time.indexOf(c.time.slice(0,13)+':00');if(k<0||k+2>=h.time.length)return'';
+  const f=v=>v.toFixed(1).replace('.',',');
+  return`Modelo Open-Meteo (no es radar): ${f(h.precipitation[k+1])} mm hasta las ${h.time[k+1].slice(11,16)} · ${f(h.precipitation[k+2])} mm hasta las ${h.time[k+2].slice(11,16)}.`;
+ }catch(e){return''}
+}
+function renderNow(){
+ const el=$('#now');if(!el)return;
+ const N=NOW,hm=m=>new Date(Date.now()+m*60000).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+ const at=N.t?new Date(N.t*1000).toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'}):'';
+ const caveat='Extrapolación del movimiento de la lluvia que ya detecta el radar: no anticipa chubascos que aún no existen y pierde fiabilidad pasada la primera hora.';
+ let cls='n-na',tx='',sub='',bar='';
+ if(N.st==='load'){tx='⏳ Analizando el radar de lluvia…'}
+ else if(N.st==='err'){tx='📡 No se pudo analizar el radar ahora mismo.';sub='Sin esa información no hay aviso de lluvia inmediata. Consulta el mapa de radar de abajo.'}
+ else if(N.st==='stale'){tx='📡 El radar no está actualizado (último fotograma hace '+N.age+' min).';sub='No hay aviso de lluvia inmediata hasta que haya datos recientes.'}
+ else if(N.st==='dry'){cls='n-ok';tx='✅ Sin lluvia en el radar cerca de Llanes.';sub=`Ningún eco de lluvia en unos 100 km a la redonda (fotograma de las ${at}). No se espera lluvia en la próxima hora salvo chubascos que se formen de nuevo, algo que el radar no puede anticipar.`}
+ else if(N.st==='nomo'){
+  if(N.now!=null&&N.now>=RAIN_DBZ){cls='n-rain';tx=`🌧️ Llueve ahora en Llanes (${rateCls(dbzRate(N.now))} según el radar).`;sub=`Fotograma de las ${at}. Hay lluvia en la zona, pero no se puede calcular hacia dónde se mueve, así que no hay previsión a minutos.`}
+  else{tx='🌦️ Hay lluvia en el radar por la zona, pero no sobre Llanes.';sub=`Fotograma de las ${at}. No se puede calcular hacia dónde se mueve, así que no hay aviso fiable para la próxima hora.`}
+ }
+ else if(N.st==='ok'){
+  const F=N.F,rate=F.map(v=>v==null?null:dbzRate(v)),isR=v=>v!=null&&v>0;
+  let hz=F.length-1;while(hz>0&&F[hz]==null)hz--;
+  const endFrom=s=>{for(let i=s;i<=hz;i++)if(!isR(rate[i])&&(i===hz||!isR(rate[i+1])))return i;return -1};
+  const maxIn=(a,b)=>Math.max(0,...rate.slice(a,b).filter(v=>v!=null));
+  const cl=m=>m>15?'n-bad':m>2?'n-warn':'n-rain';
+  if(isR(rate[0])){
+   const e=endFrom(1),mx=maxIn(0,e<0?hz+1:e);cls=cl(mx);
+   tx=`🌧️ Llueve ahora en Llanes (lluvia ${rateCls(mx)} según el radar). `+(e>=0?`Según su movimiento, dejaría de llover hacia las ${hm(e*5)} (en unos ${e*5} min).`:hz<12?`Seguiría lloviendo al menos ${hz*5} min.`:'Seguiría lloviendo durante toda la próxima hora.');
+  }else{
+   let s=-1;for(let i=1;i<=hz;i++)if(isR(rate[i])){s=i;break}
+   if(s>=0){const e=endFrom(s+1),mx=maxIn(s,e<0?hz+1:e);cls=cl(mx);
+    tx=`☔ Se acerca lluvia ${rateCls(mx)}: llegaría a Llanes hacia las ${hm(s*5)} (en unos ${s*5} min, ±10). `+(e>=0?`Duraría unos ${(e-s)*5} min.`:'Seguiría al menos hasta el final del periodo analizado.');
+   }else{cls='n-ok';tx='✅ Sin lluvia prevista en Llanes en la próxima hora.';}
+  }
+  const dirTxt=N.spd<4?'casi estacionaria':`se mueve a ~${Math.round(N.spd)} km/h, viniendo del ${dn(N.from)}`;
+  sub=`Radar de las ${at}${N.age>25?` (⚠️ con ${Math.round(N.age)} min de retraso)`:''} · la lluvia ${dirTxt}. ${hz<12?`Análisis válido hasta +${hz*5} min. `:''}${caveat}`;
+  const colr=v=>v==null?'repeating-linear-gradient(45deg,#2a3446 0 4px,#1e2736 4px 8px)':v<=0?'rgba(255,255,255,.10)':v<=2?'#7dd3fc':v<=15?'#3b82f6':v<=30?'#fbbf24':'#f87171';
+  bar=`<div class="nowbar">${rate.map((v,i)=>`<i style="background:${colr(v)}" title="${i?'+'+i*5+' min':'ahora'} · ${v==null?'sin datos':v<=0?'sin lluvia':rateCls(v)+' (≈'+v.toFixed(1).replace('.',',')+' mm/h)'}"></i>`).join('')}</div><div class="nowax"><span>ahora</span><span>+30 min</span><span>+60 min</span></div>`;
+ }
+ const ml=modelLine();
+ el.className='card nowbox '+cls;
+ el.innerHTML=`<div class="nowtx">${tx}</div>${bar}${sub?`<div class="nowsub">${sub}</div>`:''}${ml?`<div class="nowsub">${ml}</div>`:''}`;
+}
+
 /* ===== RADAR (RainViewer) ===== */
 let map=null,rLayers=[],rFrames=[],rIdx=0,rTimer=null,rPlaying=true;
 function rShow(i){
@@ -396,6 +585,9 @@ function rLoop(){
  rTimer=setTimeout(()=>{rShow(rIdx+1);rLoop()},last?1800:600);
 }
 async function radarLoad(){
+ let j=null;
+ try{j=await fetch('https://api.rainviewer.com/public/weather-maps.json').then(r=>{if(!r.ok)throw 0;return r.json()})}catch(e){}
+ nowcast(j);
  if(typeof L==='undefined'){$('#map').innerHTML='<div class="err" style="margin:14px">No se pudo cargar el mapa (sin conexión).</div>';return}
  if(!map){
   map=L.map('map').setView([CFG.lat,CFG.lon],7);
@@ -403,14 +595,15 @@ async function radarLoad(){
   L.circleMarker([CFG.lat,CFG.lon],{radius:6,color:'#fff',weight:2,fillColor:'#f43f5e',fillOpacity:1}).addTo(map).bindTooltip('Llanes',{permanent:true,direction:'right',offset:[8,0]});
  }
  try{
-  const j=await fetch('https://api.rainviewer.com/public/weather-maps.json').then(r=>{if(!r.ok)throw 0;return r.json()});
+  if(!j)throw 0;
   const past=(j.radar&&j.radar.past)||[];
   if(!past.length)throw 0;
   rLayers.forEach(l=>map.removeLayer(l));
-  rFrames=past;
-  rLayers=past.map(f=>L.tileLayer(`${j.host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`,{opacity:0,maxNativeZoom:7,maxZoom:11,zIndex:5}).addTo(map));
-  $('#rsl').max=past.length-1;
-  rShow(past.length-1);rLoop();
+  // RainViewer limita a 100 peticiones/min por IP: 7 fotogramas con teselas de 512 px (4 veces menos peticiones)
+  rFrames=past.slice(-7);
+  rLayers=rFrames.map(f=>L.tileLayer(`${j.host}${f.path}/512/{z}/{x}/{y}/2/1_1.png`,{tileSize:512,zoomOffset:-1,opacity:0,maxNativeZoom:8,maxZoom:11,zIndex:5}).addTo(map));
+  $('#rsl').max=rFrames.length-1;
+  rShow(rFrames.length-1);rLoop();
  }catch(e){$('#rt').textContent='Radar no disponible';$('#rago').textContent=''}
 }
 $('#rplay').onclick=()=>{rPlaying=!rPlaying;$('#rplay').textContent=rPlaying?'⏸':'▶';rLoop()};
