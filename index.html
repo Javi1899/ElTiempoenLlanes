@@ -4,6 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Tiempo en Llanes</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
 <style>
 :root{--bg:#0b1220;--card:rgba(255,255,255,.07);--line:rgba(255,255,255,.13);--tx:#eef3fb;--mut:#9fb0c8;--ok:#34d399;--warn:#fbbf24;--bad:#f87171}
 *{box-sizing:border-box;margin:0;padding:0}
@@ -61,6 +63,16 @@ button:active{transform:scale(.97)}
 .err{padding:10px 14px;background:rgba(248,113,113,.15);border:1px solid var(--bad);border-radius:12px;margin-bottom:10px;font-size:.88rem}
 footer{margin-top:22px;color:var(--mut);font-size:.74rem;text-align:center;line-height:1.5}
 .ar{display:inline-block}
+.radar{overflow:hidden}
+#map{height:400px;background:#0b1220}
+.rctl{display:flex;align-items:center;gap:10px;padding:10px 12px;flex-wrap:wrap}
+.rctl button{padding:7px 12px;min-width:44px}
+.rctl input[type=range]{flex:1;min-width:120px;accent-color:#60a5fa}
+.rtime{font-size:.88rem;min-width:130px;text-align:right}
+.rtime small{display:block;color:var(--mut);font-size:.72rem}
+.rnote{padding:0 14px 12px;font-size:.74rem;color:var(--mut)}
+.leaflet-container{font-family:inherit}
+@media(max-width:760px){#map{height:320px}}
 @media(max-width:760px){.hero{grid-template-columns:1fr}.big .t{font-size:2.8rem}}
 /* animaciones de las escenas */
 @keyframes drift{from{transform:translateX(-90px)}to{transform:translateX(490px)}}
@@ -100,7 +112,17 @@ footer{margin-top:22px;color:var(--mut);font-size:.74rem;text-align:center;line-
  <div class="days" id="days"></div>
  <div class="sec" id="hrt">Hora a hora</div>
  <div class="card hours" id="hours"></div>
- <footer>Datos: Open-Meteo (modelos meteorológicos y marinos). Pueden diferir de Winguru o AEMET.<br>Los avisos son orientativos, no oficiales. Se actualiza solo cada 2 h mientras la página está abierta.</footer>
+ <div class="sec">🛰️ Radar de lluvia</div>
+ <div class="card radar">
+  <div id="map"></div>
+  <div class="rctl">
+   <button id="rplay" title="Reproducir / pausar">⏸</button>
+   <input type="range" id="rsl" min="0" max="0" value="0">
+   <div class="rtime"><span id="rt">–</span><small id="rago"></small></div>
+  </div>
+  <div class="rnote">Últimas 2 horas, un fotograma cada 10 min. Cuanto más fuerte el color, más intensa la lluvia. Se actualiza cada 5 min.</div>
+ </div>
+ <footer>Datos: Open-Meteo (modelos meteorológicos y marinos) y RainViewer (radar). Mapa © OpenStreetMap · © CARTO. Pueden diferir de Winguru o AEMET.<br>Los avisos son orientativos, no oficiales. Se actualiza solo cada 2 h mientras la página está abierta.</footer>
 </div>
 
 <script>
@@ -111,7 +133,7 @@ const CFG={
  refreshMin:120,
  // Si quieres tus propios GIF, pon aquí la ruta o URL (vacío = escena animada incluida)
  gifs:{sol:'',lluvia:'',tormenta:'',viento:'',frio:'',nieve:'',nublado:'',niebla:'',noche:''},
- th:{gustWarn:50,gustBad:75,waveWarn:2.5,waveBad:4,rainWarn:10,rainBad:25,coldWarn:3,coldBad:0,heatWarn:30}
+ th:{gustWarn:50,gustBad:75,waveWarn:2.5,waveBad:4,rainWarn:10,rainBad:25,coldWarn:3,coldBad:0,heatWarn:30,snowWarn:800,snowBad:400}
 };
 /* ========================= */
 const $=s=>document.querySelector(s);
@@ -143,6 +165,22 @@ function dayFull(i){
  return dayDate(D.daily.time[i]).toLocaleDateString('es-ES',{weekday:'long',day:'numeric',month:'long'});
 }
 
+/* ===== COTA DE NIEVE ===== */
+// Usa snowfall_height de Open-Meteo; si falta, la estima como isoterma 0 °C − 300 m
+function snowInfo(i){
+ const h=D.hourly,ds=D.daily.time[i];const sn=[],fz=[];let est=false;
+ h.time.forEach((t,j)=>{if(!t.startsWith(ds))return;
+  const f=h.freezing_level_height?h.freezing_level_height[j]:null,s=h.snowfall_height?h.snowfall_height[j]:null;
+  if(f!=null)fz.push(f);
+  if(s!=null)sn.push(s);else if(f!=null){sn.push(Math.max(0,f-300));est=true}
+ });
+ if(!sn.length)return null;
+ const r=v=>Math.round(v/50)*50;
+ return{min:r(Math.min(...sn)),max:r(Math.max(...sn)),avg:r(sn.reduce((a,b)=>a+b,0)/sn.length),
+  fmin:fz.length?r(Math.min(...fz)):null,fmax:fz.length?r(Math.max(...fz)):null,est};
+}
+const rng=(a,b)=>a===b?a+' m':a+'–'+b+' m';
+
 /* ===== AVISOS ===== */
 function alertsFor(i){
  const d=D.daily,m=D.marine,T=CFG.th,a=[];
@@ -156,6 +194,8 @@ function alertsFor(i){
  if(tn<=T.coldWarn)a.push({ic:'🥶',lv:tn<=T.coldBad?2:1,tx:(tn<=T.coldBad?'Helada':'Frío')+' · mínima '+Math.round(tn)+'°'});
  const tx=d.temperature_2m_max[i];
  if(tx>=T.heatWarn)a.push({ic:'🔥',lv:1,tx:'Calor · máxima '+Math.round(tx)+'°'});
+ const sw=snowInfo(i);
+ if(sw&&r>=1&&sw.min<=T.snowWarn)a.push({ic:'❄️',lv:sw.min<=T.snowBad?2:1,tx:'Nieve a baja cota · '+rng(sw.min,sw.max)});
  if(d.weather_code[i]>=95)a.push({ic:'⛈️',lv:2,tx:'Riesgo de tormenta'});
  return a;
 }
@@ -281,6 +321,8 @@ function render(){
  const wcl=w==null?'':w>=T.waveBad?'bad':w>=T.waveWarn?'warn':'';
  const rcl=d.precipitation_sum[i]>=T.rainBad?'bad':d.precipitation_sum[i]>=T.rainWarn?'warn':'';
  const ccl=d.temperature_2m_min[i]<=T.coldBad?'bad':d.temperature_2m_min[i]<=T.coldWarn?'warn':'';
+ const sw=snowInfo(i);
+ const scl=sw&&d.precipitation_sum[i]>=1?(sw.min<=T.snowBad?'bad':sw.min<=T.snowWarn?'warn':''):'';
  const big=i===0?Math.round(c.temperature_2m):Math.round(d.temperature_2m_max[i]);
  $('#info').innerHTML=`<div class="when">${dayFull(i)}${i===0?' · ahora':''}</div>
  <div class="big"><span class="i">${ic}</span><span class="t">${big}°</span></div>
@@ -292,6 +334,8 @@ function render(){
   <div class="tile ${wcl}"><b>${w!=null?w.toFixed(1)+' m':'–'}${m?' · '+Math.round(m.wave_period_max[i])+' s':''}</b><span>Oleaje${m?' '+dn(m.wave_direction_dominant[i]):''}</span></div>
   <div class="tile"><b>${d.sunrise[i].slice(11,16)} · ${d.sunset[i].slice(11,16)}</b><span>Sale / se pone el sol</span></div>
   <div class="tile"><b>${d.uv_index_max[i]!=null?Math.round(d.uv_index_max[i]):'–'}</b><span>Índice UV</span></div>
+  <div class="tile ${scl}"><b>${sw?rng(sw.min,sw.max):'–'}</b><span>❄️ Cota de nieve${sw&&sw.est?' (aprox.)':''}</span></div>
+  <div class="tile"><b>${sw&&sw.fmin!=null?rng(sw.fmin,sw.fmax):'–'}</b><span>Isoterma 0 °C</span></div>
  </div>`;
  // avisos
  let ah='';
@@ -299,11 +343,11 @@ function render(){
  $('#alerts').innerHTML=ah||'<div class="noal">✅ Sin avisos: ni viento fuerte, ni oleaje, ni lluvia intensa, ni frío destacable.</div>';
  // días
  $('#days').innerHTML=d.time.map((_,j)=>{
-  const [t2,i2]=wmo(d.weather_code[j]);const a=alertsFor(j);
+  const [t2,i2]=wmo(d.weather_code[j]);const a=alertsFor(j);const sj=snowInfo(j);
   return`<div class="card day ${j===sel?'sel':''}" data-i="${j}"><div class="dots">${a.map(x=>x.ic).join('')}</div>
   <div class="n">${dayLabel(j)}</div><div class="dt">${dayDate(d.time[j]).getDate()}/${dayDate(d.time[j]).getMonth()+1}</div>
   <div class="ic" title="${t2}">${i2}</div><div class="tt"><b>${Math.round(d.temperature_2m_max[j])}°</b> <i>${Math.round(d.temperature_2m_min[j])}°</i></div>
-  <div class="mm">💧 ${d.precipitation_sum[j].toFixed(1)} mm</div><div class="wd">💨 ${Math.round(d.wind_gusts_10m_max[j])} km/h</div></div>`}).join('');
+  <div class="mm">💧 ${d.precipitation_sum[j].toFixed(1)} mm</div><div class="wd">💨 ${Math.round(d.wind_gusts_10m_max[j])} km/h</div>${sj&&sj.avg<=2000?`<div class="mm">❄️ cota ${sj.avg} m</div>`:''}</div>`}).join('');
  document.querySelectorAll('.day').forEach(e=>e.onclick=()=>{sel=+e.dataset.i;render();window.scrollTo({top:0,behavior:'smooth'})});
  // horas
  const h=D.hourly,ds=d.time[i];let hh='';
@@ -317,7 +361,7 @@ function render(){
 
 /* ===== DATOS ===== */
 async function load(){
- const u1=`https://api.open-meteo.com/v1/forecast?latitude=${CFG.lat}&longitude=${CFG.lon}&current=temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation&hourly=temperature_2m,precipitation,wind_speed_10m,wind_gusts_10m,weather_code&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset,uv_index_max&forecast_days=10&timezone=Europe%2FMadrid&wind_speed_unit=kmh`;
+ const u1=`https://api.open-meteo.com/v1/forecast?latitude=${CFG.lat}&longitude=${CFG.lon}&current=temperature_2m,apparent_temperature,weather_code,is_day,wind_speed_10m,wind_gusts_10m,wind_direction_10m,precipitation&hourly=temperature_2m,precipitation,wind_speed_10m,wind_gusts_10m,weather_code,freezing_level_height,snowfall_height&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_sum,precipitation_probability_max,wind_speed_10m_max,wind_gusts_10m_max,wind_direction_10m_dominant,sunrise,sunset,uv_index_max&forecast_days=10&timezone=Europe%2FMadrid&wind_speed_unit=kmh`;
  const u2=`https://marine-api.open-meteo.com/v1/marine?latitude=${CFG.marineLat}&longitude=${CFG.marineLon}&daily=wave_height_max,wave_period_max,wave_direction_dominant&forecast_days=10&timezone=Europe%2FMadrid`;
  $('#upd').textContent='Actualizando…';
  try{
@@ -333,10 +377,50 @@ async function load(){
  if(D){const t=new Date(D.stamp);$('#upd').textContent='Actualizado '+t.toLocaleDateString('es-ES',{day:'numeric',month:'short'})+' '+t.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'})+' · Open-Meteo';render()}
  else $('#upd').textContent='Sin datos';
 }
-$('#rf').onclick=load;
+/* ===== RADAR (RainViewer) ===== */
+let map=null,rLayers=[],rFrames=[],rIdx=0,rTimer=null,rPlaying=true;
+function rShow(i){
+ if(!rFrames.length)return;
+ rIdx=(i+rFrames.length)%rFrames.length;
+ rLayers.forEach((l,j)=>l.setOpacity(j===rIdx?.8:0));
+ const f=rFrames[rIdx],t=new Date(f.time*1000);
+ $('#rsl').value=rIdx;
+ $('#rt').textContent=t.toLocaleTimeString('es-ES',{hour:'2-digit',minute:'2-digit'});
+ const m=Math.round((Date.now()-t)/60000);
+ $('#rago').textContent=rIdx===rFrames.length-1?'último · hace '+m+' min':'hace '+m+' min';
+}
+function rLoop(){
+ clearTimeout(rTimer);
+ if(!rPlaying)return;
+ const last=rIdx===rFrames.length-1;
+ rTimer=setTimeout(()=>{rShow(rIdx+1);rLoop()},last?1800:600);
+}
+async function radarLoad(){
+ if(typeof L==='undefined'){$('#map').innerHTML='<div class="err" style="margin:14px">No se pudo cargar el mapa (sin conexión).</div>';return}
+ if(!map){
+  map=L.map('map').setView([CFG.lat,CFG.lon],7);
+  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:11,minZoom:5,attribution:'© OpenStreetMap · © CARTO · RainViewer'}).addTo(map);
+  L.circleMarker([CFG.lat,CFG.lon],{radius:6,color:'#fff',weight:2,fillColor:'#f43f5e',fillOpacity:1}).addTo(map).bindTooltip('Llanes',{permanent:true,direction:'right',offset:[8,0]});
+ }
+ try{
+  const j=await fetch('https://api.rainviewer.com/public/weather-maps.json').then(r=>{if(!r.ok)throw 0;return r.json()});
+  const past=(j.radar&&j.radar.past)||[];
+  if(!past.length)throw 0;
+  rLayers.forEach(l=>map.removeLayer(l));
+  rFrames=past;
+  rLayers=past.map(f=>L.tileLayer(`${j.host}${f.path}/256/{z}/{x}/{y}/2/1_1.png`,{opacity:0,maxNativeZoom:7,maxZoom:11,zIndex:5}).addTo(map));
+  $('#rsl').max=past.length-1;
+  rShow(past.length-1);rLoop();
+ }catch(e){$('#rt').textContent='Radar no disponible';$('#rago').textContent=''}
+}
+$('#rplay').onclick=()=>{rPlaying=!rPlaying;$('#rplay').textContent=rPlaying?'⏸':'▶';rLoop()};
+$('#rsl').oninput=e=>{rPlaying=false;$('#rplay').textContent='▶';clearTimeout(rTimer);rShow(+e.target.value)};
+setInterval(radarLoad,5*60000);
+
+$('#rf').onclick=()=>{load();radarLoad()};
 setInterval(load,CFG.refreshMin*60000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&(!D||Date.now()-D.stamp>30*60000))load()});
-load();
+load();radarLoad();
 </script>
 </body>
 </html>
