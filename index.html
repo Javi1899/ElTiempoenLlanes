@@ -96,6 +96,17 @@ footer{margin-top:22px;color:var(--mut);font-size:.74rem;text-align:center;line-
 .ms span{display:block;text-transform:capitalize;margin-bottom:2px}
 .ms b{display:block;color:var(--tx);font-weight:500;margin-top:2px}
 .ms svg{display:block;margin:0 auto}
+#rayos{display:block;width:100%;height:420px;border:0;background:#0b1220}
+#imap{height:520px;background:#0b1220}
+.bnames{padding:10px 14px 4px;font-size:.8rem;color:var(--mut);line-height:1.6}
+.bn{display:inline-block;background:rgba(244,114,182,.15);border:1px solid rgba(244,114,182,.55);color:#fbcfe8;padding:1px 10px;border-radius:20px;margin:0 6px 2px 4px;font-weight:600}
+.bnames a,.rnote a{color:#93c5fd}
+.hl{width:40px;text-align:center;line-height:1;text-shadow:0 0 4px #0b1220,0 0 4px #0b1220,0 0 2px #0b1220}
+.hl b{display:block;font-size:24px;font-weight:800}
+.hl span{display:block;font-size:11px;font-weight:600;color:#e2e8f0}
+.hl.lo b{color:#f87171}.hl.hi b{color:#60a5fa}
+.isl{font:600 10px system-ui,sans-serif;color:#e2e8f0;text-shadow:0 0 3px #0b1220,0 0 3px #0b1220,0 0 2px #0b1220;white-space:nowrap;transform:translate(-50%,-50%)}
+@media(max-width:760px){#rayos{height:340px}#imap{height:380px}}
 .leaflet-container{font-family:inherit}
 @media(max-width:760px){#map{height:320px}}
 @media(max-width:760px){.hero{grid-template-columns:1fr}.big .t{font-size:2.8rem}}
@@ -150,7 +161,23 @@ footer{margin-top:22px;color:var(--mut);font-size:.74rem;text-align:center;line-
   </div>
   <div class="rnote">Última hora, un fotograma cada 10 min. Cuanto más fuerte el color, más intensa la lluvia. Se actualiza cada 5 min.</div>
  </div>
- <footer>Datos: Open-Meteo (modelos meteorológicos y marinos) y RainViewer (radar). Mapas © Esri, HERE, Garmin, OpenStreetMap contributors. Fases lunares calculadas en la propia página con fórmulas astronómicas (horas con un margen de unos minutos). Pueden diferir de Winguru o AEMET.<br>Los avisos son orientativos, no oficiales. Se actualiza solo cada 2 h mientras la página está abierta.<br><br><b>Web creada por Javi.TJ</b></footer>
+ <div class="sec">⚡ Rayos en la Península · tiempo real</div>
+ <div class="card radar">
+  <iframe id="rayos" title="Mapa de rayos en tiempo real (Blitzortung.org)" loading="lazy" src="https://map.blitzortung.org/index.php?interactive=0&NavigationControl=0&FullScreenControl=0&Cookies=0&InfoDiv=0&MenuButtonDiv=0&ScaleControl=0&LinksCheckboxChecked=1&LinksRangeValue=10&MapStyle=2&MapStyleRangeValue=10&Advertisment=0#5/40/-4"></iframe>
+  <div class="rnote">Cada punto es un rayo detectado por la red <a href="https://www.blitzortung.org" target="_blank" rel="noopener">Blitzortung.org</a>; el color indica hace cuánto se produjo. Se actualiza solo, en directo. Si el mapa no muestra puntos, no hay rayos recientes en la zona. <a href="https://map.blitzortung.org/#5/40/-4" target="_blank" rel="noopener">Abrir mapa interactivo</a></div>
+ </div>
+ <div class="sec" id="isec">🌀 Isobaras, borrascas y anticiclones · previsión</div>
+ <div class="card radar">
+  <div class="bnames" id="bnames"></div>
+  <div id="imap"></div>
+  <div class="rctl">
+   <button id="iplay" title="Reproducir / pausar">⏸</button>
+   <input type="range" id="isl" min="0" max="0" value="0" aria-label="Hora de la previsión">
+   <div class="rtime"><span id="it">–</span><small id="iago"></small></div>
+  </div>
+  <div class="rnote" id="inote">B = borrasca · A = anticiclón (presión en hPa). Isobaras cada 4 hPa; las de 1000, 1020… van más gruesas. La línea discontinua marca la trayectoria prevista del centro. Previsión del modelo cada 3 h hasta 72 h, recalculada cada 3 h.</div>
+ </div>
+ <footer>Datos: Open-Meteo (modelos meteorológicos y marinos; presión para las isobaras) y RainViewer (radar). Rayos: Blitzortung.org. Mapas © Esri, HERE, Garmin, OpenStreetMap contributors. Fases lunares calculadas en la propia página con fórmulas astronómicas (horas con un margen de unos minutos). Pueden diferir de Winguru o AEMET.<br>Los avisos son orientativos, no oficiales. Se actualiza solo cada 2 h mientras la página está abierta.<br><br><b>Web creada por Javi.TJ</b></footer>
 </div>
 
 <script>
@@ -611,10 +638,182 @@ $('#rplay').onclick=()=>{rPlaying=!rPlaying;$('#rplay').textContent=rPlaying?'�
 $('#rsl').oninput=e=>{rPlaying=false;$('#rplay').textContent='▶';clearTimeout(rTimer);rShow(+e.target.value)};
 setInterval(radarLoad,5*60000);
 
-$('#rf').onclick=()=>{load();radarLoad()};
+/* ===== ISOBARAS, BORRASCAS Y ANTICICLONES (presión a nivel del mar, modelo vía Open-Meteo) =====
+   Se pide la presión en una malla de puntos del Atlántico y Europa, se suaviza, se trazan las isobaras (marching squares),
+   se detectan los centros de baja (B) y alta (A) y se siguen entre pasos de la previsión para dibujar su trayectoria. */
+// Borrascas con nombre (grupo AEMET–IPMA–Météo-France): no hay fuente abierta automática, se anotan a mano aquí.
+const BORRASCAS_CON_NOMBRE={anotado:'9 nov',lista:[{n:'Bruna',t:'borrasca'}]};
+const ISO={lat0:60,lat1:30,lon0:-40,lon1:20,step:2.5,K:4,frames:25,every:3,W:10,M:5};
+ISO.rows=Math.round((ISO.lat0-ISO.lat1)/ISO.step)+1;ISO.cols=Math.round((ISO.lon1-ISO.lon0)/ISO.step)+1;
+const ESRI_BASE='https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+ ESRI_REF='https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}';
+let imap=null,iLayer=null,iFr=[],iIdx=0,iPlay=true,iTimer=null,iBusy=false,iWanted=false,iStamp=0,iModel='';
+const iTimeout=(p,ms)=>Promise.race([p,new Promise((_,k)=>setTimeout(()=>k(new Error('tiempo de espera agotado')),ms))]);
+async function isoFetch(model){
+ const pts=[];for(let r=0;r<ISO.rows;r++)for(let c=0;c<ISO.cols;c++)pts.push([ISO.lat0-r*ISO.step,ISO.lon0+c*ISO.step]);
+ const chunks=[];for(let i=0;i<pts.length;i+=110)chunks.push(pts.slice(i,i+110));
+ const res=await Promise.all(chunks.map(async ch=>{
+  const u=`https://api.open-meteo.com/v1/forecast?latitude=${ch.map(p=>p[0]).join(',')}&longitude=${ch.map(p=>p[1]).join(',')}&hourly=pressure_msl&forecast_days=4&timezone=UTC${model?'&models='+model:''}`;
+  const r=await iTimeout(fetch(u),40000);if(!r.ok)throw new Error('HTTP '+r.status);
+  const j=await r.json();return Array.isArray(j)?j:[j];
+ }));
+ const locs=res.flat();if(locs.length!==ISO.rows*ISO.cols)throw new Error('malla incompleta');
+ return locs;
+}
+function upsample(g,R,C,K){ // interpolación bicúbica (Catmull-Rom) de la malla
+ const R2=(R-1)*K+1,C2=(C-1)*K+1,out=new Float32Array(R2*C2);
+ const cr=(p0,p1,p2,p3,t)=>0.5*((2*p1)+(-p0+p2)*t+(2*p0-5*p1+4*p2-p3)*t*t+(-p0+3*p1-3*p2+p3)*t*t*t);
+ const at=(r,c)=>g[Math.min(R-1,Math.max(0,r))*C+Math.min(C-1,Math.max(0,c))];
+ for(let r=0;r<R2;r++){const r0=Math.floor(r/K),tr=r/K-r0;
+  for(let c=0;c<C2;c++){const c0=Math.floor(c/K),tc=c/K-c0,row=[];
+   for(let dr=-1;dr<=2;dr++)row.push(cr(at(r0+dr,c0-1),at(r0+dr,c0),at(r0+dr,c0+1),at(r0+dr,c0+2),tc));
+   out[r*C2+c]=cr(row[0],row[1],row[2],row[3],tr);}}
+ return{f:out,R:R2,C:C2};
+}
+function contour(F,R,C,lev){ // marching squares → lista de polilíneas [[x,y],…] en coordenadas de malla
+ const pts=new Map(),adj=new Map();
+ const P=(k,x,y)=>{if(!pts.has(k))pts.set(k,[x,y]);return k};
+ const link=(a,b)=>{(adj.get(a)||adj.set(a,[]).get(a)).push(b);(adj.get(b)||adj.set(b,[]).get(b)).push(a)};
+ for(let r=0;r<R-1;r++)for(let c=0;c<C-1;c++){
+  const a=F[r*C+c],b=F[r*C+c+1],d=F[(r+1)*C+c+1],e=F[(r+1)*C+c];
+  const m=(a>=lev?8:0)|(b>=lev?4:0)|(d>=lev?2:0)|(e>=lev?1:0);
+  if(m===0||m===15)continue;
+  const T=()=>P('h'+r+'_'+c,c+(lev-a)/(b-a),r),Rt=()=>P('v'+r+'_'+(c+1),c+1,r+(lev-b)/(d-b)),
+   B=()=>P('h'+(r+1)+'_'+c,c+(lev-e)/(d-e),r+1),Lf=()=>P('v'+r+'_'+c,c,r+(lev-a)/(e-a));
+  switch(m){
+   case 1:case 14:link(Lf(),B());break;
+   case 2:case 13:link(B(),Rt());break;
+   case 3:case 12:link(Lf(),Rt());break;
+   case 4:case 11:link(T(),Rt());break;
+   case 6:case 9:link(T(),B());break;
+   case 7:case 8:link(T(),Lf());break;
+   case 5:if((a+b+d+e)/4>=lev){link(T(),Lf());link(B(),Rt())}else{link(T(),Rt());link(Lf(),B())}break;
+   case 10:if((a+b+d+e)/4>=lev){link(T(),Rt());link(Lf(),B())}else{link(T(),Lf());link(B(),Rt())}break;
+  }
+ }
+ const used=new Set(),chains=[];
+ const walk=s=>{const path=[s];used.add(s);let prev=null,cur=s;
+  for(;;){const nx=adj.get(cur).find(n=>n!==prev&&!used.has(n));if(nx===undefined)break;used.add(nx);path.push(nx);prev=cur;cur=nx}
+  if(path.length>2&&adj.get(cur).includes(s))path.push(s);
+  chains.push(path.map(k=>pts.get(k)));};
+ for(const k of adj.keys())if(!used.has(k)&&adj.get(k).length===1)walk(k);
+ for(const k of adj.keys())if(!used.has(k))walk(k);
+ return chains;
+}
+function extrema(F,R,C){ // mínimos (B) y máximos (A) locales con cierta prominencia
+ const W=ISO.W,M=ISO.M,out=[];
+ for(const type of ['L','H']){const sg=type==='L'?1:-1;
+  for(let r=M;r<R-M;r++)for(let c=M;c<C-M;c++){
+   const v=F[r*C+c]*sg;let best=true,sum=0,n=0;
+   for(let dr=-W;dr<=W&&best;dr++){const rr=r+dr;if(rr<0||rr>=R)continue;
+    for(let dc=-W;dc<=W;dc++){const cc=c+dc;if(cc<0||cc>=C||(dr===0&&dc===0))continue;
+     const w=F[rr*C+cc]*sg;if(w<v||(w===v&&(dr<0||(dr===0&&dc<0)))){best=false;break}sum+=w;n++}}
+   if(best&&n&&(sum/n-v)>=2.5){const val=F[r*C+c];if(type==='L'?val<=1015:val>=1018)out.push({type,r,c,v:val})}
+  }}
+ return out;
+}
+function buildTracks(centers){ // une los centros de pasos consecutivos (misma clase, a menos de ~5°)
+ const tracks=[];
+ centers.forEach((cs,f)=>{const taken=new Set();
+  cs.forEach(c=>{let best=null,bd=5;
+   tracks.forEach(t=>{if(t.type!==c.type||t.last!==f-1||taken.has(t))return;
+    const p=t.pts[t.pts.length-1],d=Math.hypot(p.lat-c.lat,(p.lon-c.lon)*Math.cos(c.lat*RAD));if(d<bd){bd=d;best=t}});
+   if(best){best.pts.push({f,lat:c.lat,lon:c.lon,v:c.v});best.last=f;taken.add(best);c.track=best}
+   else{const t={type:c.type,pts:[{f,lat:c.lat,lon:c.lon,v:c.v}],last:f};tracks.push(t);taken.add(t);c.track=t}
+  });});
+ return tracks;
+}
+function isoBuild(locs){
+ const times=locs[0].hourly.time,nowH=new Date();nowH.setUTCMinutes(0,0,0);
+ let s=times.findIndex(t=>new Date(t+'Z')>=nowH);if(s<0)s=0;
+ const raw=[];
+ for(let k=0;k<ISO.frames;k++){const i=s+k*ISO.every;if(i>=times.length)break;
+  const g=new Float32Array(ISO.rows*ISO.cols);let ok=true;
+  for(let n=0;n<locs.length;n++){const v=locs[n].hourly.pressure_msl[i];if(v==null){ok=false;break}g[n]=v}
+  if(ok)raw.push({t:times[i],g});}
+ if(raw.length<2)throw new Error('el modelo no devolvió presión suficiente');
+ const ups=raw.map(f=>upsample(f.g,ISO.rows,ISO.cols,ISO.K));
+ let mn=1e9,mx=-1e9;ups.forEach(u=>{for(const v of u.f){if(v<mn)mn=v;if(v>mx)mx=v}});
+ const levels=[];for(let v=Math.ceil(mn/4)*4;v<=mx;v+=4)levels.push(v);
+ const toLL=(x,y)=>[ISO.lat0-y*ISO.step/ISO.K,ISO.lon0+x*ISO.step/ISO.K],centers=[];
+ const frames=raw.map((f,k)=>{
+  const u=ups[k],lines=[],labels=[],lab=[];
+  levels.forEach(lev=>{
+   const ch=contour(u.f,u.R,u.C,lev).filter(c=>c.length>=8).sort((a,b)=>b.length-a.length); // se descartan bucles diminutos (ruido)
+   ch.forEach((c,ci)=>{
+    lines.push({ll:c.map(p=>toLL(p[0],p[1])),major:lev%20===0});
+    if(ci<2&&c.length>=16){const p=toLL(c[Math.floor(c.length/2)][0],c[Math.floor(c.length/2)][1]);
+     if(!lab.some(q=>Math.abs(q[0]-p[0])<3.5&&Math.abs(q[1]-p[1])<5)){lab.push(p);labels.push({ll:p,txt:lev})}}
+   });
+  });
+  const cs=extrema(u.f,u.R,u.C).map(e=>{const p=toLL(e.c,e.r);return{type:e.type,lat:p[0],lon:p[1],v:e.v}});
+  centers.push(cs);
+  return{t:f.t,lines,labels,centers:cs};
+ });
+ return{frames,tracks:buildTracks(centers)};
+}
+function isoShow(i){
+ if(!iFr.length||!imap)return;
+ iIdx=(i+iFr.length)%iFr.length;const fr=iFr[iIdx];
+ $('#isl').value=iIdx;
+ $('#it').textContent=new Date(fr.t+'Z').toLocaleString('es-ES',{weekday:'short',day:'numeric',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'}).replace(',','');
+ $('#iago').textContent=iIdx===0?'ahora (modelo)':'previsión +'+(iIdx*ISO.every)+' h';
+ iLayer.clearLayers();
+ fr.lines.forEach(ch=>L.polyline(ch.ll,{color:'#e2e8f0',weight:ch.major?2.2:1.1,opacity:ch.major?.9:.62,interactive:false}).addTo(iLayer));
+ fr.labels.forEach(l=>L.marker(l.ll,{icon:L.divIcon({className:'',html:`<div class="isl">${l.txt}</div>`,iconSize:[0,0]}),interactive:false,keyboard:false}).addTo(iLayer));
+ iTracks.forEach(t=>{if(t.pts.length>=3)L.polyline(t.pts.map(p=>[p.lat,p.lon]),{color:t.type==='L'?'#f87171':'#60a5fa',weight:1.6,opacity:.7,dashArray:'4 5',interactive:false}).addTo(iLayer)});
+ fr.centers.filter(c=>c.track.pts.length>=3).forEach(c=>
+  L.marker([c.lat,c.lon],{icon:L.divIcon({className:'',html:`<div class="hl ${c.type==='L'?'lo':'hi'}"><b>${c.type==='L'?'B':'A'}</b><span>${Math.round(c.v)}</span></div>`,iconSize:[40,40],iconAnchor:[20,20]}),interactive:false,keyboard:false,zIndexOffset:500}).addTo(iLayer));
+}
+let iTracks=[];
+function isoLoop(){clearTimeout(iTimer);if(!iPlay||!iFr.length)return;iTimer=setTimeout(()=>{isoShow(iIdx+1);isoLoop()},iIdx===iFr.length-1?1800:700)}
+async function isoLoad(force){
+ if(!iWanted||iBusy)return;
+ if(iFr.length&&!force&&Date.now()-iStamp<2.9*3600e3)return;
+ iBusy=true;
+ if(!iFr.length)$('#it').textContent='Calculando isobaras…';
+ try{
+  if(typeof L==='undefined')throw new Error('no se pudo cargar el mapa');
+  let res=null,err=null;
+  for(const m of ['icon_global','']){
+   try{res=isoBuild(await isoFetch(m));iModel=m?'ICON global (DWD)':'mejor modelo disponible';break}catch(e){err=e}
+  }
+  if(!res)throw err;
+  iFr=res.frames;iTracks=res.tracks;iStamp=Date.now();
+  if(!imap){
+   $('#imap').innerHTML='';
+   imap=L.map('imap',{minZoom:3,maxZoom:7,zoomSnap:.25});
+   L.tileLayer(ESRI_BASE,{maxZoom:11,attribution:'Esri, HERE, Garmin, © OpenStreetMap · Open-Meteo'}).addTo(imap);
+   L.tileLayer(ESRI_REF,{maxZoom:11,zIndex:6}).addTo(imap);
+   iLayer=L.layerGroup().addTo(imap);
+   L.circleMarker([CFG.lat,CFG.lon],{radius:5,color:'#fff',weight:2,fillColor:'#f43f5e',fillOpacity:1}).addTo(imap).bindTooltip('Llanes',{direction:'right',offset:[6,0]});
+   imap.fitBounds([[28,-40],[62,22]]);
+  }
+  $('#isl').max=iFr.length-1;
+  $('#inote').innerHTML=$('#inote').innerHTML.replace(/ Modelo: [^.]*\./,'')+' Modelo: '+iModel+' vía Open-Meteo.';
+  isoShow(0);isoLoop();
+ }catch(e){
+  if(!iFr.length){$('#imap').innerHTML=`<div class="err" style="margin:14px">No se pudieron calcular las isobaras (${e.message}). Se reintenta sola.</div>`;$('#it').textContent='–'}
+  else $('#iago').textContent='no se pudo actualizar';
+ }
+ iBusy=false;
+}
+function isoInit(){
+ const b=BORRASCAS_CON_NOMBRE;
+ $('#bnames').innerHTML='🌀 Borrascas con nombre (AEMET), anotadas a mano el '+b.anotado+': '+(b.lista.length?b.lista.map(x=>`<span class="bn">${x.n}</span>`).join(''):'ninguna')+' <a href="https://www.aemet.es/es/web/conocermas/borrascas" target="_blank" rel="noopener">Ver estado actual en AEMET</a>';
+ $('#iplay').onclick=()=>{iPlay=!iPlay;$('#iplay').textContent=iPlay?'⏸':'▶';isoLoop()};
+ $('#isl').oninput=e=>{iPlay=false;$('#iplay').textContent='▶';clearTimeout(iTimer);isoShow(+e.target.value)};
+ const el=$('#isec');
+ if('IntersectionObserver' in window){ // se piden los datos solo al acercarse a la sección
+  new IntersectionObserver((es,ob)=>{if(es.some(e=>e.isIntersecting)){iWanted=true;isoLoad();ob.disconnect()}},{rootMargin:'400px'}).observe(el);
+ }else{iWanted=true;isoLoad()}
+ setInterval(()=>isoLoad(),30*60000);
+}
+
+$('#rf').onclick=()=>{load();radarLoad();isoLoad(true)};
 setInterval(load,CFG.refreshMin*60000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&(!D||Date.now()-D.stamp>30*60000))load()});
-load();radarLoad();
+load();radarLoad();isoInit();
 </script>
 </body>
 </html>
