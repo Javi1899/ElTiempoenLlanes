@@ -96,13 +96,6 @@ footer{margin-top:22px;color:var(--mut);font-size:.74rem;text-align:center;line-
 .ms span{display:block;text-transform:capitalize;margin-bottom:2px}
 .ms b{display:block;color:var(--tx);font-weight:500;margin-top:2px}
 .ms svg{display:block;margin:0 auto}
-#tmap{height:420px;background:#0b1220}
-.tmk{display:flex;align-items:center;justify-content:center;border-radius:50%;font-weight:700;font-size:12px;color:#0b1220;border:2px solid rgba(255,255,255,.85);box-shadow:0 1px 4px rgba(0,0,0,.5)}
-.tmk.llanes{box-shadow:0 0 0 3px #f43f5e,0 1px 4px rgba(0,0,0,.5)}
-.tleg{display:flex;flex-wrap:wrap;gap:4px 12px;padding:0 14px 6px;font-size:.72rem;color:var(--mut);align-items:center}
-.tleg i{display:inline-block;width:12px;height:12px;border-radius:50%;margin-right:4px;vertical-align:-2px}
-.tsum{padding:10px 14px 6px;font-size:.82rem;line-height:1.5}
-@media(max-width:760px){#tmap{height:340px}}
 .leaflet-container{font-family:inherit}
 @media(max-width:760px){#map{height:320px}}
 @media(max-width:760px){.hero{grid-template-columns:1fr}.big .t{font-size:2.8rem}}
@@ -157,18 +150,7 @@ footer{margin-top:22px;color:var(--mut);font-size:.74rem;text-align:center;line-
   </div>
   <div class="rnote">Última hora, un fotograma cada 10 min. Cuanto más fuerte el color, más intensa la lluvia. Se actualiza cada 5 min.</div>
  </div>
- <div class="sec" id="tsec">🌡️ Temperaturas en Asturias · AEMET</div>
- <div class="card radar">
-  <div id="tmap"></div>
-  <div class="tsum" id="tsum"></div>
-  <div class="tleg" id="tleg"></div>
-  <div class="rctl">
-   <input type="range" id="tsl" min="0" max="0" value="0" aria-label="Hora de la observación">
-   <div class="rtime"><span id="tt">–</span><small id="tago"></small></div>
-  </div>
-  <div class="rnote">Temperatura del aire medida en las estaciones de AEMET, hora a hora (últimas 24 h), descargadas de AEMET cada 30 min. Llanes, marcado en rojo. <a href="https://www.aemet.es/es/eltiempo/observacion/ultimosdatos" target="_blank" rel="noopener" style="color:#93c5fd">Ver en AEMET</a></div>
- </div>
- <footer>Datos: Open-Meteo (modelos meteorológicos y marinos), AEMET (temperaturas observadas) y RainViewer (radar). Mapas © Esri, HERE, Garmin, OpenStreetMap contributors. Fases lunares calculadas en la propia página con fórmulas astronómicas (horas con un margen de unos minutos). Pueden diferir de Winguru o AEMET.<br>Los avisos son orientativos, no oficiales. Se actualiza solo cada 2 h mientras la página está abierta.<br><br><b>Web creada por Javi.TJ</b></footer>
+ <footer>Datos: Open-Meteo (modelos meteorológicos y marinos) y RainViewer (radar). Mapas © Esri, HERE, Garmin, OpenStreetMap contributors. Fases lunares calculadas en la propia página con fórmulas astronómicas (horas con un margen de unos minutos). Pueden diferir de Winguru o AEMET.<br>Los avisos son orientativos, no oficiales. Se actualiza solo cada 2 h mientras la página está abierta.<br><br><b>Web creada por Javi.TJ</b></footer>
 </div>
 
 <script>
@@ -629,79 +611,10 @@ $('#rplay').onclick=()=>{rPlaying=!rPlaying;$('#rplay').textContent=rPlaying?'�
 $('#rsl').oninput=e=>{rPlaying=false;$('#rplay').textContent='▶';clearTimeout(rTimer);rShow(+e.target.value)};
 setInterval(radarLoad,5*60000);
 
-/* ===== TEMPERATURAS EN ASTURIAS (AEMET OpenData · observación convencional, todas las estaciones) ===== */
-const T_URL='https://raw.githubusercontent.com/Javi1899/ElTiempoenLlanes/datos/asturias-temperaturas.json'; // lo genera cada 30 min una GitHub Action
-const T_LLANES='C030E';
-const TCOL=[[0,'#60a5fa','< 0°'],[5,'#38bdf8','0–5°'],[10,'#2dd4bf','5–10°'],[15,'#a3e635','10–15°'],[20,'#fbbf24','15–20°'],[25,'#fb923c','20–25°'],[99,'#ef4444','≥ 25°']];
-const tcol=v=>TCOL.find(c=>v<c[0])[1];
-const tfmt=v=>v.toFixed(1).replace('.',',');
-const nice=s=>String(s||'').toLowerCase().replace(/(^|[\s,.(\-\/])([a-záéíóúñü])/g,(m,a,b)=>a+b.toUpperCase());
-const tTimeout=(p,ms)=>Promise.race([p,new Promise((_,k)=>setTimeout(()=>k(new Error('tiempo de espera agotado')),ms))]);
-let tmap=null,tLayer=null,tData=null,tTimes=[],tIdx=0,tLoaded=false,tBusy=false,tWanted=false,tGen=null;
-async function tempLoad(){
- if(!tWanted||tBusy)return;tBusy=true;
- if(!tLoaded)$('#tt').textContent='Cargando temperaturas…';
- try{
-  const r=await tTimeout(fetch(T_URL+'?v='+Math.floor(Date.now()/300000),{cache:'no-store'}),30000);
-  if(r.status===404)throw new Error('todavía no se han generado los datos: falta activar la descarga automática de AEMET en GitHub');
-  if(!r.ok)throw new Error('HTTP '+r.status);
-  const J=await r.json(),by={};
-  for(const o of J.obs||[]){
-   if(!o||o.v==null||!o.f)continue;
-   (by[o.f]=by[o.f]||{})[o.id]={id:o.id,n:o.n,lat:+o.lat,lon:+o.lon,alt:o.alt,v:+o.v};
-  }
-  const times=Object.keys(by).sort();
-  if(!times.length)throw new Error('el archivo no contiene estaciones');
-  const cnt=times.map(t=>Object.keys(by[t]).length),mx=Math.max(...cnt);
-  let k=times.length-1;while(k>0&&cnt[k]<mx*0.7)k--;   // última hora con la mayoría de estaciones ya publicadas
-  tData=by;tTimes=times;tIdx=k;tGen=J.generado?new Date(J.generado):null;tLoaded=true;
-  tempRender();
- }catch(e){
-  if(!tLoaded)$('#tmap').innerHTML=`<div class="err" style="margin:14px">No se pudieron cargar las temperaturas de AEMET (${e.message}). Se reintenta sola.</div>`,$('#tt').textContent='–';
-  else $('#tago').textContent='no se pudo actualizar';
- }
- tBusy=false;
-}
-function tempRender(){
- if(!tData)return;
- if(typeof L==='undefined'){$('#tmap').innerHTML='<div class="err" style="margin:14px">No se pudo cargar el mapa (sin conexión).</div>';return}
- const f=tTimes[tIdx],st=Object.values(tData[f]),d=new Date(f.endsWith('Z')?f:f+'Z');
- $('#tt').textContent=d.toLocaleString('es-ES',{weekday:'long',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'});
- const mins=Math.round((Date.now()-d)/60000);
- $('#tago').textContent=tIdx===tTimes.length-1?'última · hace '+(mins<90?mins+' min':Math.round(mins/60)+' h'):'hace '+Math.round(mins/60)+' h';
- if(tGen&&Date.now()-tGen>3*3600e3)$('#tago').textContent+=' · descarga de hace '+Math.round((Date.now()-tGen)/3600e3)+' h';
- $('#tsl').max=tTimes.length-1;$('#tsl').value=tIdx;
- let first=false;
- if(!tmap){
-  $('#tmap').innerHTML='';
-  tmap=L.map('tmap',{minZoom:6,maxZoom:11});
-  L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',{maxZoom:11,attribution:'Esri, HERE, Garmin, © OpenStreetMap · AEMET'}).addTo(tmap);
-  L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',{maxZoom:11,zIndex:6}).addTo(tmap);
-  tLayer=L.layerGroup().addTo(tmap);first=true;
- }
- tLayer.clearLayers();
- st.forEach(s=>{
-  const icon=L.divIcon({className:'',html:`<div class="tmk${s.id===T_LLANES?' llanes':''}" style="width:34px;height:34px;background:${tcol(s.v)}">${tfmt(s.v)}</div>`,iconSize:[34,34],iconAnchor:[17,17]});
-  L.marker([s.lat,s.lon],{icon}).bindTooltip(`<b>${nice(s.n)}</b><br>${tfmt(s.v)} °C${s.alt!=null?' · '+Math.round(s.alt)+' m':''}`,{direction:'top'}).addTo(tLayer);
- });
- if(first)tmap.fitBounds(L.latLngBounds(st.map(s=>[s.lat,s.lon])).pad(.12));
- const hi=st.reduce((a,b)=>b.v>a.v?b:a),lo=st.reduce((a,b)=>b.v<a.v?b:a),ll=st.find(s=>s.id===T_LLANES);
- $('#tsum').innerHTML=`${ll?`<b>Llanes:</b> ${tfmt(ll.v)}° · `:''}Más cálida: <b>${nice(hi.n)}</b> ${tfmt(hi.v)}° · Más fría: <b>${nice(lo.n)}</b> ${tfmt(lo.v)}° · ${st.length} estaciones`;
-}
-function tempInit(){
- $('#tleg').innerHTML=TCOL.map(c=>`<span><i style="background:${c[1]}"></i>${c[2]}</span>`).join('')+'<span><i style="background:#fff;box-shadow:0 0 0 2px #f43f5e"></i>Llanes</span>';
- $('#tsl').oninput=e=>{tIdx=+e.target.value;tempRender()};
- const el=$('#tsec');
- if('IntersectionObserver' in window){ // los datos de todas las estaciones pesan: solo se piden al acercarse a esta sección
-  new IntersectionObserver((es,ob)=>{if(es.some(e=>e.isIntersecting)){tWanted=true;tempLoad();ob.disconnect()}},{rootMargin:'500px'}).observe(el);
- }else{tWanted=true;tempLoad()}
- setInterval(tempLoad,30*60000);
-}
-
-$('#rf').onclick=()=>{load();radarLoad();tempLoad()};
+$('#rf').onclick=()=>{load();radarLoad()};
 setInterval(load,CFG.refreshMin*60000);
 document.addEventListener('visibilitychange',()=>{if(!document.hidden&&(!D||Date.now()-D.stamp>30*60000))load()});
-load();radarLoad();tempInit();
+load();radarLoad();
 </script>
 </body>
 </html>
