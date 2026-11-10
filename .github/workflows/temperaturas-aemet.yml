@@ -1,0 +1,38 @@
+# Descarga cada 30 min las observaciones de AEMET (todas las estaciones), se queda con las de Asturias
+# y las publica en la rama "datos" (asturias-temperaturas.json) para que la página las lea sin proxies.
+# Requiere el secreto de repositorio AEMET_API_KEY (Settings > Secrets and variables > Actions).
+name: Temperaturas AEMET Asturias
+
+on:
+  schedule:
+    - cron: '25,55 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: temperaturas-aemet
+  cancel-in-progress: false
+
+jobs:
+  datos:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Descargar y filtrar datos de AEMET
+        env:
+          AEMET_API_KEY: ${{ secrets.AEMET_API_KEY }}
+        run: python3 scripts/aemet_asturias.py out/asturias-temperaturas.json
+
+      - name: Publicar en la rama datos
+        run: |
+          cd out
+          git init -q -b datos
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add asturias-temperaturas.json
+          git commit -q -m "Temperaturas AEMET $(date -u +%Y-%m-%dT%H:%MZ)"
+          git push -f "https://x-access-token:${{ github.token }}@github.com/${{ github.repository }}.git" datos

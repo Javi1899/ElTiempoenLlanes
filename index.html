@@ -166,9 +166,9 @@ footer{margin-top:22px;color:var(--mut);font-size:.74rem;text-align:center;line-
    <input type="range" id="tsl" min="0" max="0" value="0" aria-label="Hora de la observación">
    <div class="rtime"><span id="tt">–</span><small id="tago"></small></div>
   </div>
-  <div class="rnote">Temperatura del aire medida en las estaciones de AEMET, hora a hora (últimas 24 h). Llanes, marcado en rojo. <a href="https://www.aemet.es/es/eltiempo/observacion/ultimosdatos" target="_blank" rel="noopener" style="color:#93c5fd">Ver en AEMET</a></div>
+  <div class="rnote">Temperatura del aire medida en las estaciones de AEMET, hora a hora (últimas 24 h), descargadas de AEMET cada 30 min. Llanes, marcado en rojo. <a href="https://www.aemet.es/es/eltiempo/observacion/ultimosdatos" target="_blank" rel="noopener" style="color:#93c5fd">Ver en AEMET</a></div>
  </div>
- <footer>Datos: Open-Meteo (modelos meteorológicos y marinos), AEMET (temperaturas observadas) y RainViewer (radar). Mapa © OpenStreetMap · © CARTO. Fases lunares calculadas en la propia página con fórmulas astronómicas (horas con un margen de unos minutos). Pueden diferir de Winguru o AEMET.<br>Los avisos son orientativos, no oficiales. Se actualiza solo cada 2 h mientras la página está abierta.<br><br><b>Web creada por Javi.TJ</b></footer>
+ <footer>Datos: Open-Meteo (modelos meteorológicos y marinos), AEMET (temperaturas observadas) y RainViewer (radar). Mapas © Esri, HERE, Garmin, OpenStreetMap contributors. Fases lunares calculadas en la propia página con fórmulas astronómicas (horas con un margen de unos minutos). Pueden diferir de Winguru o AEMET.<br>Los avisos son orientativos, no oficiales. Se actualiza solo cada 2 h mientras la página está abierta.<br><br><b>Web creada por Javi.TJ</b></footer>
 </div>
 
 <script>
@@ -609,7 +609,8 @@ async function radarLoad(){
  if(typeof L==='undefined'){$('#map').innerHTML='<div class="err" style="margin:14px">No se pudo cargar el mapa (sin conexión).</div>';return}
  if(!map){
   map=L.map('map').setView([CFG.lat,CFG.lon],7);
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:11,minZoom:5,attribution:'© OpenStreetMap · © CARTO · RainViewer'}).addTo(map);
+  L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',{maxZoom:11,minZoom:5,attribution:'Esri, HERE, Garmin, © OpenStreetMap · RainViewer'}).addTo(map);
+  L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',{maxZoom:11,minZoom:5,zIndex:6}).addTo(map);
   L.circleMarker([CFG.lat,CFG.lon],{radius:6,color:'#fff',weight:2,fillColor:'#f43f5e',fillOpacity:1}).addTo(map).bindTooltip('Llanes',{permanent:true,direction:'right',offset:[8,0]});
  }
  try{
@@ -629,51 +630,34 @@ $('#rsl').oninput=e=>{rPlaying=false;$('#rplay').textContent='▶';clearTimeout(
 setInterval(radarLoad,5*60000);
 
 /* ===== TEMPERATURAS EN ASTURIAS (AEMET OpenData · observación convencional, todas las estaciones) ===== */
-const AEMET_KEY='eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJ0dWVyb2p1bmNvamF2aWVyQGdtYWlsLmNvbSIsImp0aSI6ImE3YWM3MjE4LTYzZjYtNDJlZS05MDY1LTQ0ODhhMzY4MTNjYiIsImlzcyI6IkFFTUVUIiwiaWF0IjoxNzczMzE2MTAwLCJ1c2VySWQiOiJhN2FjNzIxOC02M2Y2LTQyZWUtOTA2NS00NDg4YTM2ODEzY2IiLCJyb2xlIjoiIn0.TwFrksLEvG7-0nFQlpv2zH3XskKy5AxJDEEaqjKHQp0';
-const TBOX={s:42.95,n:43.72,w:-7.25,e:-4.5},T_LLANES='C030E';
+const T_URL='https://raw.githubusercontent.com/Javi1899/ElTiempoenLlanes/datos/asturias-temperaturas.json'; // lo genera cada 30 min una GitHub Action
+const T_LLANES='C030E';
 const TCOL=[[0,'#60a5fa','< 0°'],[5,'#38bdf8','0–5°'],[10,'#2dd4bf','5–10°'],[15,'#a3e635','10–15°'],[20,'#fbbf24','15–20°'],[25,'#fb923c','20–25°'],[99,'#ef4444','≥ 25°']];
 const tcol=v=>TCOL.find(c=>v<c[0])[1];
 const tfmt=v=>v.toFixed(1).replace('.',',');
 const nice=s=>String(s||'').toLowerCase().replace(/(^|[\s,.(\-\/])([a-záéíóúñü])/g,(m,a,b)=>a+b.toUpperCase());
 const tTimeout=(p,ms)=>Promise.race([p,new Promise((_,k)=>setTimeout(()=>k(new Error('tiempo de espera agotado')),ms))]);
-let tmap=null,tLayer=null,tData=null,tTimes=[],tIdx=0,tLoaded=false,tBusy=false,tWanted=false;
-async function aemetJson(r){ // AEMET a veces responde en ISO-8859-1: se respeta el charset para no romper tildes
- const buf=await r.arrayBuffer(),m=/charset=([^;]+)/i.exec(r.headers.get('content-type')||'');let t;
- try{t=new TextDecoder(m?m[1].trim():'utf-8').decode(buf)}catch(e){t=new TextDecoder('utf-8').decode(buf)}
- return JSON.parse(t);
-}
-async function aemetGet(ep){ // doble petición de AEMET OpenData: 1º la URL de datos, 2º los datos
- const url=`https://opendata.aemet.es/opendata/api${ep}?api_key=${AEMET_KEY}`,P='https://api.allorigins.win/get?url=';
- try{
-  const b=await aemetJson(await fetch(url));
-  if(b.estado!==200)throw new Error(b.descripcion||'AEMET');
-  return await aemetJson(await fetch(b.datos));
- }catch(e1){ // si el navegador bloquea la petición directa, se usa el mismo proxy que tu otra página del tiempo
-  const b=JSON.parse((await (await fetch(P+encodeURIComponent(url))).json()).contents);
-  if(b.estado!==200)throw new Error(b.descripcion||'AEMET');
-  return JSON.parse((await (await fetch(P+encodeURIComponent(b.datos))).json()).contents);
- }
-}
+let tmap=null,tLayer=null,tData=null,tTimes=[],tIdx=0,tLoaded=false,tBusy=false,tWanted=false,tGen=null;
 async function tempLoad(){
  if(!tWanted||tBusy)return;tBusy=true;
- if(!tLoaded)$('#tt').textContent='Cargando datos de AEMET…';
+ if(!tLoaded)$('#tt').textContent='Cargando temperaturas…';
  try{
-  const all=await tTimeout(aemetGet('/observacion/convencional/todas'),90000);
-  if(!Array.isArray(all))throw new Error('respuesta inesperada');
-  const by={};
-  for(const o of all){
-   const lat=+o.lat,lon=+o.lon,v=Number(o.ta);
-   if(o.ta==null||!isFinite(v)||!o.fint||!(lat>=TBOX.s&&lat<=TBOX.n&&lon>=TBOX.w&&lon<=TBOX.e))continue;
-   (by[o.fint]=by[o.fint]||{})[o.idema]={id:o.idema,n:o.ubi,lat,lon,alt:o.alt,v};
+  const r=await tTimeout(fetch(T_URL+'?v='+Math.floor(Date.now()/300000),{cache:'no-store'}),30000);
+  if(r.status===404)throw new Error('todavía no se han generado los datos: falta activar la descarga automática de AEMET en GitHub');
+  if(!r.ok)throw new Error('HTTP '+r.status);
+  const J=await r.json(),by={};
+  for(const o of J.obs||[]){
+   if(!o||o.v==null||!o.f)continue;
+   (by[o.f]=by[o.f]||{})[o.id]={id:o.id,n:o.n,lat:+o.lat,lon:+o.lon,alt:o.alt,v:+o.v};
   }
   const times=Object.keys(by).sort();
-  if(!times.length)throw new Error('AEMET no devolvió estaciones de Asturias');
+  if(!times.length)throw new Error('el archivo no contiene estaciones');
   const cnt=times.map(t=>Object.keys(by[t]).length),mx=Math.max(...cnt);
   let k=times.length-1;while(k>0&&cnt[k]<mx*0.7)k--;   // última hora con la mayoría de estaciones ya publicadas
-  tData=by;tTimes=times;tIdx=k;tLoaded=true;
+  tData=by;tTimes=times;tIdx=k;tGen=J.generado?new Date(J.generado):null;tLoaded=true;
   tempRender();
  }catch(e){
-  if(!tLoaded)$('#tmap').innerHTML=`<div class="err" style="margin:14px">No se pudieron cargar las temperaturas de AEMET (${e.message}). Se reintenta sola; también puedes abrirlas en la web de AEMET.</div>`,$('#tt').textContent='–';
+  if(!tLoaded)$('#tmap').innerHTML=`<div class="err" style="margin:14px">No se pudieron cargar las temperaturas de AEMET (${e.message}). Se reintenta sola.</div>`,$('#tt').textContent='–';
   else $('#tago').textContent='no se pudo actualizar';
  }
  tBusy=false;
@@ -685,12 +669,14 @@ function tempRender(){
  $('#tt').textContent=d.toLocaleString('es-ES',{weekday:'long',hour:'2-digit',minute:'2-digit',timeZone:'Europe/Madrid'});
  const mins=Math.round((Date.now()-d)/60000);
  $('#tago').textContent=tIdx===tTimes.length-1?'última · hace '+(mins<90?mins+' min':Math.round(mins/60)+' h'):'hace '+Math.round(mins/60)+' h';
+ if(tGen&&Date.now()-tGen>3*3600e3)$('#tago').textContent+=' · descarga de hace '+Math.round((Date.now()-tGen)/3600e3)+' h';
  $('#tsl').max=tTimes.length-1;$('#tsl').value=tIdx;
  let first=false;
  if(!tmap){
   $('#tmap').innerHTML='';
   tmap=L.map('tmap',{minZoom:6,maxZoom:11});
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png',{maxZoom:11,attribution:'© OpenStreetMap · © CARTO · AEMET'}).addTo(tmap);
+  L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Base/MapServer/tile/{z}/{y}/{x}',{maxZoom:11,attribution:'Esri, HERE, Garmin, © OpenStreetMap · AEMET'}).addTo(tmap);
+  L.tileLayer('https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Dark_Gray_Reference/MapServer/tile/{z}/{y}/{x}',{maxZoom:11,zIndex:6}).addTo(tmap);
   tLayer=L.layerGroup().addTo(tmap);first=true;
  }
  tLayer.clearLayers();
